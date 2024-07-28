@@ -1,0 +1,229 @@
+import sqlite3
+import bcrypt
+
+# Database Setup
+def setup_database():
+    conn = sqlite3.connect('inventory.db')
+    c = conn.cursor()
+
+    # Create users table
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL
+    )
+    ''')
+
+    # Create products table
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        price REAL NOT NULL
+    )
+    ''')
+
+    # Create sales table
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS sales (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER,
+        quantity INTEGER,
+        sale_date TEXT,
+        FOREIGN KEY(product_id) REFERENCES products(id)
+    )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+setup_database()
+
+# User Authentication
+def register_user(username, password):
+    conn = sqlite3.connect('inventory.db')
+    c = conn.cursor()
+
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+    try:
+        c.execute('INSERT INTO users (username, password) VALUES (?, ?)', (username, hashed_password))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+def login_user(username, password):
+    conn = sqlite3.connect('inventory.db')
+    c = conn.cursor()
+
+    c.execute('SELECT password FROM users WHERE username = ?', (username,))
+    result = c.fetchone()
+
+    conn.close()
+
+    if result and bcrypt.checkpw(password.encode('utf-8'), result[0]):
+        return True
+    else:
+        return False
+
+# Product Management
+def add_product(name, quantity, price):
+    conn = sqlite3.connect('inventory.db')
+    c = conn.cursor()
+
+    c.execute('INSERT INTO products (name, quantity, price) VALUES (?, ?, ?)', (name, quantity, price))
+    conn.commit()
+    conn.close()
+
+def edit_product(product_id, name, quantity, price):
+    conn = sqlite3.connect('inventory.db')
+    c = conn.cursor()
+
+    c.execute('UPDATE products SET name = ?, quantity = ?, price = ? WHERE id = ?', (name, quantity, price, product_id))
+    conn.commit()
+    conn.close()
+
+def delete_product(product_id):
+    conn = sqlite3.connect('inventory.db')
+    c = conn.cursor()
+
+    c.execute('DELETE FROM products WHERE id = ?', (product_id,))
+    conn.commit()
+    conn.close()
+
+# Inventory Tracking and Reports
+def get_low_stock_products(threshold):
+    conn = sqlite3.connect('inventory.db')
+    c = conn.cursor()
+
+    c.execute('SELECT * FROM products WHERE quantity < ?', (threshold,))
+    products = c.fetchall()
+
+    conn.close()
+    return products
+
+def record_sale(product_id, quantity, sale_date):
+    conn = sqlite3.connect('inventory.db')
+    c = conn.cursor()
+
+    c.execute('INSERT INTO sales (product_id, quantity, sale_date) VALUES (?, ?, ?)', (product_id, quantity, sale_date))
+    c.execute('UPDATE products SET quantity = quantity - ? WHERE id = ?', (quantity, product_id))
+
+    conn.commit()
+    conn.close()
+
+def get_sales_summary():
+    conn = sqlite3.connect('inventory.db')
+    c = conn.cursor()
+
+    c.execute('''
+    SELECT p.name, SUM(s.quantity) AS total_quantity, SUM(s.quantity * p.price) AS total_sales
+    FROM sales s
+    JOIN products p ON s.product_id = p.id
+    GROUP BY p.id
+    ''')
+
+    sales_summary = c.fetchall()
+
+    conn.close()
+    return sales_summary
+
+def main():
+    print("Welcome to the Inventory Management System")
+
+    while True:
+        print("\nOptions:")
+        print("1. Register")
+        print("2. Login")
+        print("3. Exit")
+
+        choice = input("Enter choice: ")
+
+        if choice == '1':
+            username = input("Enter username: ")
+            password = input("Enter password: ")
+            if register_user(username, password):
+                print("User registered successfully.")
+            else:
+                print("Username already exists.")
+
+        elif choice == '2':
+            username = input("Enter username: ")
+            password = input("Enter password: ")
+            if login_user(username, password):
+                print("Login successful.")
+                break
+            else:
+                print("Invalid username or password.")
+
+        elif choice == '3':
+            print("Goodbye!")
+            return
+        else:
+            print("Invalid choice. Try again.")
+
+    while True:
+        print("\nOptions:")
+        print("1. Add Product")
+        print("2. Edit Product")
+        print("3. Delete Product")
+        print("4. View Low Stock Products")
+        print("5. Record Sale")
+        print("6. View Sales Summary")
+        print("7. Exit")
+
+        choice = input("Enter choice: ")
+
+        if choice == '1':
+            name = input("Enter product name: ")
+            quantity = int(input("Enter quantity: "))
+            price = float(input("Enter price: "))
+            add_product(name, quantity, price)
+            print("Product added successfully.")
+
+        elif choice == '2':
+            product_id = int(input("Enter product ID: "))
+            name = input("Enter new product name: ")
+            quantity = int(input("Enter new quantity: "))
+            price = float(input("Enter new price: "))
+            edit_product(product_id, name, quantity, price)
+            print("Product edited successfully.")
+
+        elif choice == '3':
+            product_id = int(input("Enter product ID: "))
+            delete_product(product_id)
+            print("Product deleted successfully.")
+
+        elif choice == '4':
+            threshold = int(input("Enter stock threshold: "))
+            products = get_low_stock_products(threshold)
+            print("Low Stock Products:")
+            for product in products:
+                print(f"ID: {product[0]}, Name: {product[1]}, Quantity: {product[2]}, Price: {product[3]}")
+
+        elif choice == '5':
+            product_id = int(input("Enter product ID: "))
+            quantity = int(input("Enter quantity: "))
+            sale_date = input("Enter sale date (YYYY-MM-DD): ")
+            record_sale(product_id, quantity, sale_date)
+            print("Sale recorded successfully.")
+
+        elif choice == '6':
+            summary = get_sales_summary()
+            print("Sales Summary:")
+            for item in summary:
+                print(f"Product: {item[0]}, Total Quantity Sold: {item[1]}, Total Sales: {item[2]}")
+
+        elif choice == '7':
+            print("Goodbye!")
+            return
+        else:
+            print("Invalid choice. Try again.")
+
+if __name__ == "_main_":
+    main()
